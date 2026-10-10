@@ -190,11 +190,17 @@ with tab2:
         name = st.selectbox("フォルダの画像から選ぶ", [os.path.basename(p) for p in paths], key="i2t_sel")
         chosen = Image.open(os.path.join(IMAGES_DIR, name))
     topn2 = st.slider("いくつ表示する？", 3, 15, 8, key="i2t_n")
-    if st.button("言葉をさがす", type="primary", key="i2t_btn") and chosen is not None:
-        c1, c2 = st.columns([1, 1])
-        with c1:
-            st.image(chosen, use_container_width=True)
-        with c2:
+    go = st.button("言葉をさがす", type="primary", key="i2t_btn")
+
+    # 選んだ画像は常に左側にプレビュー表示。結果は右側に出す。
+    c1, c2 = st.columns([1, 1])
+    with c1:
+        if chosen is not None:
+            st.image(chosen, use_container_width=True, caption="選んだ画像")
+        else:
+            st.info("画像を選ぶかアップロードしてください。")
+    with c2:
+        if go and chosen is not None:
             words, label_vecs = build_label_index(tuple(load_label_words()))
             iv = embed_image(chosen)
             sims = label_vecs @ iv
@@ -208,6 +214,8 @@ with tab2:
                 st.markdown(f'<div class="word-row">{words[idx]} '
                             f'<span class="score">{pct:.0f}%</span></div>', unsafe_allow_html=True)
                 st.progress(max(0, min(100, int(round(pct)))))
+        elif chosen is not None:
+            st.caption("「言葉をさがす」を押すと、この画像に近い言葉が出ます。")
 
 # ===== ③ 画像 → 画像 =====
 with tab3:
