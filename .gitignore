@@ -1,0 +1,22 @@
+# Python 仮想環境（各自で作成）
+venv/
+
+# サンプル画像・自分の写真（各自でダウンロード/配置）
+images/*.jpg
+images/*.jpeg
+images/*.png
+images/*.webp
+images/*.JPG
+images/*.JPEG
+images/*.PNG
+images/credits.csv
+
+# Python キャッシュ
+__pycache__/
+*.pyc
+
+# Claude Code 用ローカル設定
+.claude/
+
+# macOS
+.DS_Store

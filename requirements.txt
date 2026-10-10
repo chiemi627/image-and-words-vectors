@@ -1,0 +1,11 @@
+# transformers は 4.x 系が必須（5.x だと LINE モデルの trust_remote_code コードが動きません）
+transformers==4.49.0
+tokenizers==0.21.4
+torch==2.14.1
+torchvision==0.29.1
+timm==1.0.30
+sentencepiece==0.2.2
+pillow==12.3.0
+requests==2.34.2
+streamlit==1.65.0
+numpy==2.5.3
