@@ -22,6 +22,7 @@ LABELS_PATH = os.path.join(BASE_DIR, "labels.json")
 # 既定はCPU（booth で確実に動く）。環境変数で mps/cuda に切替可。
 DEVICE = os.environ.get("CLIP_DEVICE", "cpu")
 IMG_EXTS = ("*.jpg", "*.jpeg", "*.png", "*.webp", "*.JPG", "*.JPEG", "*.PNG")
+CACHE_PATH = os.path.join(IMAGES_DIR, ".embeddings.npz")  # 画像ベクトルのキャッシュ
 
 st.set_page_config(page_title="画像と言葉をベクトルで考える", page_icon="🖼️", layout="wide")
 st.markdown(
@@ -74,18 +75,52 @@ def list_images():
     return sorted(set(files))
 
 
-@st.cache_data(show_spinner="画像をベクトルに変換中…")
+def _load_disk_cache():
+    """前回のベクトルをディスクから読む（path -> (mtime, vec)）。"""
+    if not os.path.exists(CACHE_PATH):
+        return {}
+    try:
+        d = np.load(CACHE_PATH, allow_pickle=True)
+        return {str(p): (int(m), v) for p, m, v in zip(d["paths"], d["mtimes"], d["vecs"])}
+    except Exception:
+        return {}
+
+
+def _save_disk_cache(cache):
+    try:
+        paths = list(cache.keys())
+        np.savez(CACHE_PATH,
+                 paths=np.array(paths),
+                 mtimes=np.array([cache[p][0] for p in paths]),
+                 vecs=np.array([cache[p][1] for p in paths], dtype=np.float32))
+    except Exception:
+        pass
+
+
+@st.cache_data(show_spinner="画像をベクトルに変換中…（初回のみ時間がかかります。2回目以降は速いです）")
 def build_image_index(signature, _model_id):
-    """images/ の全画像をベクトル化。signature(= (path,mtime)の並び) が変わると再計算。"""
-    paths = [p for p, _ in signature]
-    vecs = []
-    for p in paths:
-        try:
-            vecs.append(embed_image(Image.open(p)))
-        except Exception:
-            vecs.append(np.zeros(model.config.projection_dim if hasattr(model.config, "projection_dim") else 512))
-    arr = np.array(vecs) if vecs else np.zeros((0, 1))
-    return paths, arr
+    """images/ の全画像をベクトル化。ディスクキャッシュを使い、
+    変更された画像だけ再計算する（signature = (path, mtime) の並び）。"""
+    cache = _load_disk_cache()
+    names, vecs, new_cache, updated = [], [], {}, False
+    for p, mt in signature:
+        if p in cache and cache[p][0] == int(mt):
+            v = np.asarray(cache[p][1], dtype=np.float32)
+        else:
+            try:
+                v = embed_image(Image.open(p)).astype(np.float32)
+            except Exception:
+                v = None
+            updated = True
+        if v is None:
+            continue
+        new_cache[p] = (int(mt), v)
+        names.append(p)
+        vecs.append(v)
+    if updated or len(new_cache) != len(cache):
+        _save_disk_cache(new_cache)
+    arr = np.array(vecs, dtype=np.float32) if vecs else np.zeros((0, 1), dtype=np.float32)
+    return names, arr
 
 
 @st.cache_data(show_spinner="言葉をベクトルに変換中…")
@@ -125,14 +160,22 @@ with tab1:
     topn = st.slider("いくつ表示する？", 1, 12, 6, key="t2i_n")
     if st.button("さがす", type="primary", key="t2i_btn") and paths:
         names, img_vecs = build_image_index(image_signature(), HF_MODEL)
+        _, bank = build_label_index(tuple(load_label_words()))
         qv = embed_texts([query])[0]
-        sims = img_vecs @ qv
-        order = np.argsort(-sims)[:topn]
+        raw = img_vecs @ qv
+        # ハブ抑制（平均中心化）：各画像の「どんな言葉にも近い」度合い(μ)を引く。
+        # 特定の画像ばかり上位に出る現象（ハブ性）を抑える。σで割ると過補正に
+        # なりがちなので、平均を引くだけに留める（CSLSと同系統の簡易版）。
+        mu = (img_vecs @ bank.T).mean(axis=1)
+        score = raw - mu
+        order = np.argsort(-score)[:topn]
+        lo, hi = float(score.min()), float(score.max())
         cols = st.columns(3)
         for i, idx in enumerate(order):
+            match = int(round((score[idx] - lo) / (hi - lo + 1e-9) * 100))
             with cols[i % 3]:
                 st.image(names[idx], use_container_width=True,
-                         caption=f"{os.path.basename(names[idx])}　類似度 {sims[idx]:.3f}")
+                         caption=f"{os.path.basename(names[idx])}　マッチ度 {match}")
 
 # ===== ② 画像 → 言葉 =====
 with tab2:

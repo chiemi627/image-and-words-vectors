@@ -11,8 +11,12 @@ echo "==> ライブラリをインストールします（torch など。数分�
 ./venv/bin/pip install --upgrade pip
 ./venv/bin/pip install -r requirements.txt
 
-echo "==> サンプル画像（CC0）をダウンロードします"
-./venv/bin/python -I download_sample_images.py || echo "（画像DLは任意。images/ に自分の写真を入れてもOK）"
+if ls images/*.jpg >/dev/null 2>&1; then
+  echo "==> サンプル画像は既にあります（$(ls images/*.jpg | wc -l | tr -d ' ') 枚）。ダウンロードはスキップします。"
+else
+  echo "==> サンプル画像（CC0）をダウンロードします"
+  ./venv/bin/python -I download_sample_images.py || echo "（画像DLは任意。images/ に自分の写真を入れてもOK）"
+fi
 
 echo ""
 echo "✓ セットアップ完了！ 次のコマンドで起動できます:"
